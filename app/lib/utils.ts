@@ -105,28 +105,121 @@ const extractJsonCandidate = (text: string): string => {
   return withoutCodeFence;
 }
 
+const stripJsonNoise = (text: string): string => {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|\s+)\/\/.*$/gm, '')
+    .replace(/,\s*([}\]])/g, '$1')
+    .trim();
+}
+
+const toText = (content: AIResponse['message']['content']): string => {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+
+  return content
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (!item || typeof item !== 'object') return '';
+
+      const record = item as {
+        text?: unknown;
+        content?: unknown;
+        value?: unknown;
+        message?: unknown;
+      };
+
+      if (typeof record.text === 'string') return record.text;
+      if (typeof record.content === 'string') return record.content;
+      if (typeof record.value === 'string') return record.value;
+      if (typeof record.message === 'string') return record.message;
+
+      return '';
+    })
+    .join('\n')
+    .trim();
+}
+
+const extractScoreFromText = (text: string, patterns: RegExp[]): number | null => {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (!Number.isNaN(value)) return clampScore(value);
+  }
+
+  return null;
+}
+
+const parseLooseFeedbackScores = (text: string): Feedback | null => {
+  const overall = extractScoreFromText(text, [
+    /"overallScore"\s*:\s*(\d+(?:\.\d+)?)/i,
+    /overall\s*score\s*[:=-]\s*(\d+(?:\.\d+)?)/i,
+  ]);
+  const ats = extractScoreFromText(text, [
+    /"ATS"[\s\S]{0,140}?"score"\s*:\s*(\d+(?:\.\d+)?)/i,
+    /ats\s*score\s*[:=-]\s*(\d+(?:\.\d+)?)/i,
+  ]);
+  const tone = extractScoreFromText(text, [
+    /"toneAndStyle"[\s\S]{0,140}?"score"\s*:\s*(\d+(?:\.\d+)?)/i,
+    /tone\s*(?:and|&)\s*style\s*score\s*[:=-]\s*(\d+(?:\.\d+)?)/i,
+  ]);
+  const content = extractScoreFromText(text, [
+    /"content"[\s\S]{0,140}?"score"\s*:\s*(\d+(?:\.\d+)?)/i,
+    /content\s*score\s*[:=-]\s*(\d+(?:\.\d+)?)/i,
+  ]);
+  const structure = extractScoreFromText(text, [
+    /"structure"[\s\S]{0,140}?"score"\s*:\s*(\d+(?:\.\d+)?)/i,
+    /structure\s*score\s*[:=-]\s*(\d+(?:\.\d+)?)/i,
+  ]);
+  const skills = extractScoreFromText(text, [
+    /"skills"[\s\S]{0,140}?"score"\s*:\s*(\d+(?:\.\d+)?)/i,
+    /skills\s*score\s*[:=-]\s*(\d+(?:\.\d+)?)/i,
+  ]);
+
+  const scoreCount = [overall, ats, tone, content, structure, skills].filter(
+    (score) => typeof score === 'number'
+  ).length;
+
+  if (scoreCount === 0) return null;
+
+  return coerceFeedback({
+    overallScore: overall ?? 0,
+    ATS: { score: ats ?? 0, tips: [] },
+    toneAndStyle: { score: tone ?? 0, tips: [] },
+    content: { score: content ?? 0, tips: [] },
+    structure: { score: structure ?? 0, tips: [] },
+    skills: { score: skills ?? 0, tips: [] },
+  });
+}
+
 export const parseFeedbackResponse = (
   content: AIResponse['message']['content']
 ): Feedback | null => {
-  const text =
-    typeof content === 'string'
-      ? content
-      : content
-          .map((item) =>
-            typeof item?.text === 'string' ? item.text : ''
-          )
-          .join('\n')
-          .trim();
+  const text = toText(content);
 
   if (!text) return null;
 
-  const candidate = extractJsonCandidate(text);
+  const candidate = stripJsonNoise(extractJsonCandidate(text));
 
   try {
     return coerceFeedback(JSON.parse(candidate));
   } catch {
-    return null;
+    return parseLooseFeedbackScores(text);
   }
+}
+
+export const isLikelyFallbackFeedback = (feedback: Feedback | null): boolean => {
+  if (!feedback) return false;
+
+  return (
+    feedback.overallScore === 62 &&
+    feedback.ATS.score === 60 &&
+    feedback.toneAndStyle.score === 64 &&
+    feedback.content.score === 61 &&
+    feedback.structure.score === 66 &&
+    feedback.skills.score === 59
+  );
 }
 
 const buildDetailedTips = (

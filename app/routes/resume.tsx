@@ -4,7 +4,12 @@ import {usePuterStore} from "~/lib/puter";
 import Summary from "~/components/Summary";
 import ATS from "~/components/ATS";
 import Details from "~/components/Details";
-import {coerceFeedback, createFallbackFeedback, parseFeedbackResponse} from "~/lib/utils";
+import {
+    coerceFeedback,
+    createFallbackFeedback,
+    isLikelyFallbackFeedback,
+    parseFeedbackResponse,
+} from "~/lib/utils";
 import {prepareInstructions} from "../../constants";
 
 const ANALYSIS_TIMEOUT_MS = 90000;
@@ -98,6 +103,10 @@ const Resume = () => {
                 }
 
                 let resolvedFeedback = coerceFeedback(data.feedback);
+
+                if (isLikelyFallbackFeedback(resolvedFeedback)) {
+                    resolvedFeedback = null;
+                }
 
                 if (!resolvedFeedback) {
                     try {
