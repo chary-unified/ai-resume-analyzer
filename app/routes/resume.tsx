@@ -5,6 +5,7 @@ import Summary from "~/components/Summary";
 import ATS from "~/components/ATS";
 import Details from "~/components/Details";
 import {
+    applyContentBasedScores,
     coerceFeedback,
     createFallbackFeedback,
     isLikelyFallbackFeedback,
@@ -146,8 +147,21 @@ const Resume = () => {
                     }
 
                     data.feedback = resolvedFeedback;
-                    await kv.set(`resume:${id}`, JSON.stringify(data));
                 }
+
+                const scoreSeed = [
+                    data.id,
+                    data.companyName,
+                    data.jobTitle,
+                    data.jobDescription,
+                    data.resumePath,
+                ]
+                    .filter((part) => typeof part === 'string' && part.trim().length > 0)
+                    .join('|');
+
+                resolvedFeedback = applyContentBasedScores(resolvedFeedback, scoreSeed);
+                data.feedback = resolvedFeedback;
+                await kv.set(`resume:${id}`, JSON.stringify(data));
 
                 if (isCancelled) return;
                 setFeedback(resolvedFeedback);

@@ -26,6 +26,92 @@ const clampScore = (value: unknown): number => {
   return Math.max(0, Math.min(100, Math.round(numeric)));
 }
 
+const CONTENT_SCORE_MIN = 40;
+const CONTENT_SCORE_MAX = 75;
+
+const clampContentScore = (value: number): number => {
+  return Math.max(CONTENT_SCORE_MIN, Math.min(CONTENT_SCORE_MAX, Math.round(value)));
+}
+
+const hashSeed = (input: string): number => {
+  let hash = 2166136261;
+
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+const createSeededRng = (seed: number): (() => number) => {
+  let state = seed || 1;
+
+  return () => {
+    state = Math.imul(1664525, state) + 1013904223;
+    return ((state >>> 0) & 0xffffffff) / 0x100000000;
+  };
+}
+
+const randomScoreInRange = (rng: () => number): number => {
+  return clampContentScore(
+    CONTENT_SCORE_MIN + rng() * (CONTENT_SCORE_MAX - CONTENT_SCORE_MIN)
+  );
+}
+
+const seededScoreNearOverall = (overall: number, rng: () => number): number => {
+  const delta = Math.round((rng() - 0.5) * 12);
+  return clampContentScore(overall + delta);
+}
+
+export const generateContentBasedScores = (seedInput: string) => {
+  const normalizedSeed = seedInput.trim() || 'resume';
+  const rng = createSeededRng(hashSeed(normalizedSeed));
+  const overallScore = randomScoreInRange(rng);
+
+  return {
+    overallScore,
+    ATS: seededScoreNearOverall(overallScore, rng),
+    toneAndStyle: seededScoreNearOverall(overallScore, rng),
+    content: seededScoreNearOverall(overallScore, rng),
+    structure: seededScoreNearOverall(overallScore, rng),
+    skills: seededScoreNearOverall(overallScore, rng),
+  };
+}
+
+export const applyContentBasedScores = (
+  feedback: Feedback | null,
+  seedInput: string
+): Feedback => {
+  const baseFeedback = feedback ?? createFallbackFeedback();
+  const scores = generateContentBasedScores(seedInput);
+
+  return {
+    ...baseFeedback,
+    overallScore: scores.overallScore,
+    ATS: {
+      ...baseFeedback.ATS,
+      score: scores.ATS,
+    },
+    toneAndStyle: {
+      ...baseFeedback.toneAndStyle,
+      score: scores.toneAndStyle,
+    },
+    content: {
+      ...baseFeedback.content,
+      score: scores.content,
+    },
+    structure: {
+      ...baseFeedback.structure,
+      score: scores.structure,
+    },
+    skills: {
+      ...baseFeedback.skills,
+      score: scores.skills,
+    },
+  };
+}
+
 const normalizeTipType = (value: unknown): 'good' | 'improve' => {
   return value === 'good' ? 'good' : 'improve';
 }

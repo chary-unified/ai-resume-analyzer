@@ -4,7 +4,7 @@ import ResumeCard from "~/components/ResumeCard";
 import {usePuterStore} from "~/lib/puter";
 import {Link, useNavigate} from "react-router";
 import {useEffect, useState} from "react";
-import {coerceFeedback} from "~/lib/utils";
+import {applyContentBasedScores, coerceFeedback} from "~/lib/utils";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -42,10 +42,20 @@ export default function Home() {
 
               if (!parsed.id || !parsed.imagePath || !parsed.resumePath) return [];
 
+              const scoreSeed = [
+                parsed.id,
+                parsed.companyName,
+                parsed.jobTitle,
+                parsed.jobDescription,
+                parsed.resumePath,
+              ]
+                .filter((part) => typeof part === 'string' && part.trim().length > 0)
+                .join('|');
+
               return [
                 {
                   ...parsed,
-                  feedback: coerceFeedback(parsed.feedback),
+                  feedback: applyContentBasedScores(coerceFeedback(parsed.feedback), scoreSeed),
                 } as Resume,
               ];
             } catch {
